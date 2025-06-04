@@ -11,8 +11,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useProducts } from "@/contexts/product-context"
-import { Plus, Save, Trash2, Lock, Eye, EyeOff, Edit, Users, BarChart3, Package, Tags } from 'lucide-react'
+import { Plus, Save, Trash2, Lock, Eye, EyeOff, Edit, Users, BarChart3, Package, Tags } from "lucide-react"
 import { createClient } from "@supabase/supabase-js"
+import { ImageUpload } from "@/components/image-upload"
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
@@ -35,7 +36,17 @@ interface UserInquiry {
 }
 
 export default function AdminPage() {
-  const { products, addProduct, removeProduct, updateProduct, categories, addCategory, removeCategory } = useProducts()
+  const {
+    products,
+    addProduct,
+    removeProduct,
+    updateProduct,
+    categories,
+    addCategory,
+    removeCategory,
+    loading,
+    refreshData,
+  } = useProducts()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -44,6 +55,7 @@ export default function AdminPage() {
   const [userInquiries, setUserInquiries] = useState<UserInquiry[]>([])
   const [editingProduct, setEditingProduct] = useState<string | null>(null)
   const [newCategory, setNewCategory] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [formData, setFormData] = useState({
     name: "",
@@ -103,11 +115,11 @@ export default function AdminPage() {
     setUserInquiries([])
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsSubmitting(true)
 
     const productData = {
-      id: editingProduct || Date.now().toString(),
       name: formData.name,
       description: formData.description,
       category: formData.category,
@@ -122,28 +134,46 @@ export default function AdminPage() {
         : undefined,
     }
 
-    if (editingProduct) {
-      updateProduct(editingProduct, productData)
-      setEditingProduct(null)
-      alert("Product updated successfully!")
-    } else {
-      addProduct(productData)
-      alert("Product added successfully!")
-    }
+    try {
+      let success = false
+      if (editingProduct) {
+        success = await updateProduct(editingProduct, productData)
+        if (success) {
+          setEditingProduct(null)
+          alert("Product updated successfully!")
+        } else {
+          alert("Error updating product. Please try again.")
+        }
+      } else {
+        success = await addProduct(productData)
+        if (success) {
+          alert("Product added successfully!")
+        } else {
+          alert("Error adding product. Please try again.")
+        }
+      }
 
-    // Reset form
-    setFormData({
-      name: "",
-      description: "",
-      category: "",
-      material: "",
-      sizeRange: "",
-      pressureRating: "",
-      temperatureRange: "",
-      image: "",
-      applications: "",
-      additionalSpecs: "",
-    })
+      if (success) {
+        // Reset form
+        setFormData({
+          name: "",
+          description: "",
+          category: "",
+          material: "",
+          sizeRange: "",
+          pressureRating: "",
+          temperatureRange: "",
+          image: "",
+          applications: "",
+          additionalSpecs: "",
+        })
+      }
+    } catch (error) {
+      console.error("Error:", error)
+      alert("An unexpected error occurred. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleEdit = (product: any) => {
@@ -179,18 +209,38 @@ export default function AdminPage() {
     })
   }
 
-  const handleAddCategory = (e: React.FormEvent) => {
+  const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault()
     if (newCategory.trim()) {
-      addCategory(newCategory.trim())
-      setNewCategory("")
-      alert("Category added successfully!")
+      const success = await addCategory(newCategory.trim())
+      if (success) {
+        setNewCategory("")
+        alert("Category added successfully!")
+      } else {
+        alert("Error adding category. Please try again.")
+      }
     }
   }
 
-  const handleRemoveCategory = (category: string) => {
+  const handleRemoveCategory = async (category: string) => {
     if (window.confirm(`Are you sure you want to remove the category "${category}"?`)) {
-      removeCategory(category);
+      const success = await removeCategory(category)
+      if (!success) {
+        alert(
+          `Cannot remove category "${category}" because products are using it. Please reassign or delete these products first.`,
+        )
+      }
+    }
+  }
+
+  const handleRemoveProduct = async (productId: string) => {
+    if (window.confirm(`Are you sure you want to remove this product?`)) {
+      const success = await removeProduct(productId)
+      if (success) {
+        alert("Product removed successfully!")
+      } else {
+        alert("Error removing product. Please try again.")
+      }
     }
   }
 
@@ -274,6 +324,17 @@ export default function AdminPage() {
               </form>
             </CardContent>
           </Card>
+        </motion.div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen py-20 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
+          <div className="w-16 h-16 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-lg text-gray-600 dark:text-gray-300">Loading admin panel...</p>
         </motion.div>
       </div>
     )
@@ -441,13 +502,10 @@ export default function AdminPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="image">Image URL</Label>
-                      <Input
-                        id="image"
-                        name="image"
-                        value={formData.image}
-                        onChange={handleChange}
-                        placeholder="https://example.com/image.jpg"
+                      <Label htmlFor="image">Product Image</Label>
+                      <ImageUpload
+                        onImageUpload={(imageUrl) => setFormData({ ...formData, image: imageUrl })}
+                        currentImage={formData.image}
                       />
                     </div>
 
@@ -480,6 +538,7 @@ export default function AdminPage() {
                         type="submit"
                         className="flex-1 bg-teal-600 hover:bg-teal-700 dark:bg-green-600 dark:hover:bg-green-700"
                         size="lg"
+                        disabled={isSubmitting}
                       >
                         <Save className="mr-2 h-4 w-4" />
                         {editingProduct ? "Update Product" : "Add Product"}
@@ -528,7 +587,7 @@ export default function AdminPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => removeProduct(product.id)}
+                            onClick={() => handleRemoveProduct(product.id)}
                             className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -583,7 +642,10 @@ export default function AdminPage() {
                   <h3 className="text-lg font-semibold mb-4">Current Categories ({categories.length})</h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {categories.map((category, index) => (
-                      <div key={index} className="flex items-center gap-2 bg-teal-100 dark:bg-green-900 rounded-full pr-2">
+                      <div
+                        key={index}
+                        className="flex items-center gap-2 bg-teal-100 dark:bg-green-900 rounded-full pr-2"
+                      >
                         <Badge
                           variant="secondary"
                           className="flex-1 justify-center py-2 px-4 text-sm bg-transparent text-teal-800 dark:text-green-100"

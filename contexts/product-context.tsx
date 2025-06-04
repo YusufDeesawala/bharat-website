@@ -1,6 +1,9 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createClient } from "@supabase/supabase-js"
+
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
 export interface Product {
   id: string
@@ -14,159 +17,253 @@ export interface Product {
   image?: string
   applications?: string[]
   additionalSpecs?: string[]
+  created_at?: string
+  updated_at?: string
 }
 
 interface ProductContextType {
   products: Product[]
   categories: string[]
-  addProduct: (product: Product) => void
-  removeProduct: (id: string) => void
-  updateProduct: (id: string, product: Product) => void
-  addCategory: (category: string) => void
-  removeCategory: (category: string) => void
+  loading: boolean
+  error: string | null
+  addProduct: (product: Omit<Product, "id" | "created_at" | "updated_at">) => Promise<boolean>
+  removeProduct: (id: string) => Promise<boolean>
+  updateProduct: (id: string, product: Omit<Product, "id" | "created_at" | "updated_at">) => Promise<boolean>
+  addCategory: (category: string) => Promise<boolean>
+  removeCategory: (category: string) => Promise<boolean>
+  refreshData: () => Promise<void>
 }
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined)
 
-const defaultProducts: Product[] = [
-  {
-    id: "1",
-    name: "Heavy Duty PVC Pipe Clamp",
-    description: "Robust pipe clamp designed for high-pressure applications with superior grip and durability.",
-    category: "Pipe Clamps",
-    material: "PVC with Steel Reinforcement",
-    sizeRange: '1/2" - 8"',
-    pressureRating: "300 PSI",
-    temperatureRange: "-10°C to 80°C",
-    applications: ["Water supply systems", "Industrial piping", "Chemical processing", "HVAC systems"],
-    additionalSpecs: ["NSF certified", "UV resistant", "Corrosion resistant", "Easy installation"],
-  },
-  {
-    id: "2",
-    name: "Standard PVC Flange",
-    description: "High-quality PVC flange for secure pipe connections in various industrial applications.",
-    category: "Flanges",
-    material: "PVC",
-    sizeRange: '2" - 12"',
-    pressureRating: "150 PSI",
-    temperatureRange: "0°C to 60°C",
-    applications: [
-      "Water treatment plants",
-      "Chemical processing",
-      "Food and beverage industry",
-      "Pharmaceutical applications",
-    ],
-    additionalSpecs: ["ANSI standard", "Smooth finish", "Chemical resistant", "Long service life"],
-  },
-  {
-    id: "3",
-    name: "Quick Connect Coupling",
-    description: "Fast and reliable coupling system for temporary or permanent pipe connections.",
-    category: "Couplings",
-    material: "PVC with Rubber Seals",
-    sizeRange: '1" - 6"',
-    pressureRating: "200 PSI",
-    temperatureRange: "-5°C to 70°C",
-    applications: ["Irrigation systems", "Pool and spa installations", "Temporary piping", "Maintenance applications"],
-    additionalSpecs: ["Tool-free installation", "Leak-proof design", "Reusable", "Color-coded sizes"],
-  },
-  {
-    id: "4",
-    name: "Ball Valve PVC",
-    description: "Reliable ball valve for flow control in PVC piping systems with smooth operation.",
-    category: "Valves",
-    material: "PVC Body with PTFE Ball",
-    sizeRange: '1/2" - 4"',
-    pressureRating: "250 PSI",
-    temperatureRange: "0°C to 65°C",
-    applications: ["Water distribution", "Chemical handling", "Pool systems", "Industrial processes"],
-    additionalSpecs: ["Full port design", "Lever handle", "Bubble-tight seal", "Low torque operation"],
-  },
-  {
-    id: "5",
-    name: "Threaded Adapter",
-    description: "Versatile threaded adapter for connecting different pipe types and sizes.",
-    category: "Adapters",
-    material: "PVC",
-    sizeRange: '1/2" - 3"',
-    pressureRating: "200 PSI",
-    temperatureRange: "-10°C to 60°C",
-    applications: ["Pipe transitions", "Equipment connections", "Repair applications", "System modifications"],
-    additionalSpecs: ["NPT threads", "Precision machined", "Multiple configurations", "Easy installation"],
-  },
-  {
-    id: "6",
-    name: "Elbow Fitting 90°",
-    description: "Smooth 90-degree elbow fitting for directional changes in piping systems.",
-    category: "Fittings",
-    material: "PVC",
-    sizeRange: '1/2" - 10"',
-    pressureRating: "200 PSI",
-    temperatureRange: "0°C to 60°C",
-    applications: ["Plumbing systems", "Drainage applications", "Ventilation systems", "Industrial piping"],
-    additionalSpecs: ["Smooth interior", "Socket connections", "Standard dimensions", "High flow capacity"],
-  },
-]
-
-const defaultCategories = ["Pipe Clamps", "Flanges", "Couplings", "Valves", "Adapters", "Fittings"]
-
 export function ProductProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>([])
-  const [categories, setCategories] = useState<string[]>(defaultCategories)
+  const [categories, setCategories] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchProducts = async () => {
+    try {
+      console.log("Fetching products...")
+      const { data, error } = await supabase.from("products").select("*").order("created_at", { ascending: false })
+
+      if (error) {
+        console.error("Error fetching products:", error)
+        setError(`Error fetching products: ${error.message}`)
+        return
+      }
+
+      console.log("Products fetched:", data)
+
+      const formattedProducts =
+        data?.map((product) => ({
+          id: product.id,
+          name: product.name,
+          description: product.description,
+          category: product.category,
+          material: product.material,
+          sizeRange: product.size_range,
+          pressureRating: product.pressure_rating,
+          temperatureRange: product.temperature_range,
+          image: product.image_url,
+          applications: product.applications || [],
+          additionalSpecs: product.additional_specs || [],
+          created_at: product.created_at,
+          updated_at: product.updated_at,
+        })) || []
+
+      setProducts(formattedProducts)
+      setError(null)
+    } catch (error) {
+      console.error("Error fetching products:", error)
+      setError(`Unexpected error: ${error}`)
+    }
+  }
+
+  const fetchCategories = async () => {
+    try {
+      console.log("Fetching categories...")
+      const { data, error } = await supabase.from("categories").select("name").order("name")
+
+      if (error) {
+        console.error("Error fetching categories:", error)
+        setError(`Error fetching categories: ${error.message}`)
+        return
+      }
+
+      console.log("Categories fetched:", data)
+      setCategories(data?.map((cat) => cat.name) || [])
+      setError(null)
+    } catch (error) {
+      console.error("Error fetching categories:", error)
+      setError(`Unexpected error: ${error}`)
+    }
+  }
+
+  const refreshData = async () => {
+    setLoading(true)
+    setError(null)
+    await Promise.all([fetchProducts(), fetchCategories()])
+    setLoading(false)
+  }
 
   useEffect(() => {
-    const savedProducts = localStorage.getItem("pvc-products")
-    const savedCategories = localStorage.getItem("pvc-categories")
-
-    if (savedProducts) {
-      setProducts(JSON.parse(savedProducts))
-    } else {
-      setProducts(defaultProducts)
-    }
-
-    if (savedCategories) {
-      setCategories(JSON.parse(savedCategories))
-    } else {
-      setCategories(defaultCategories)
-    }
+    refreshData()
   }, [])
 
-  useEffect(() => {
-    localStorage.setItem("pvc-products", JSON.stringify(products))
-  }, [products])
+  const addProduct = async (productData: Omit<Product, "id" | "created_at" | "updated_at">): Promise<boolean> => {
+    try {
+      console.log("Adding product:", productData)
 
-  useEffect(() => {
-    localStorage.setItem("pvc-categories", JSON.stringify(categories))
-  }, [categories])
+      const insertData = {
+        name: productData.name,
+        description: productData.description,
+        category: productData.category,
+        material: productData.material,
+        size_range: productData.sizeRange,
+        pressure_rating: productData.pressureRating,
+        temperature_range: productData.temperatureRange,
+        image_url: productData.image || null,
+        applications: productData.applications || [],
+        additional_specs: productData.additionalSpecs || [],
+      }
 
-  const addProduct = (product: Product) => {
-    setProducts((prev) => [...prev, product])
-  }
+      console.log("Insert data:", insertData)
 
-  const removeProduct = (id: string) => {
-    setProducts((prev) => prev.filter((product) => product.id !== id))
-  }
+      const { data, error } = await supabase.from("products").insert([insertData]).select()
 
-  const updateProduct = (id: string, updatedProduct: Product) => {
-    setProducts((prev) => prev.map((product) => (product.id === id ? updatedProduct : product)))
-  }
+      if (error) {
+        console.error("Error adding product:", error)
+        setError(`Error adding product: ${error.message}`)
+        return false
+      }
 
-  const addCategory = (category: string) => {
-    if (!categories.includes(category)) {
-      setCategories((prev) => [...prev, category])
+      console.log("Product added successfully:", data)
+      await fetchProducts()
+      return true
+    } catch (error) {
+      console.error("Error adding product:", error)
+      setError(`Unexpected error: ${error}`)
+      return false
     }
   }
 
-  const removeCategory = (categoryToRemove: string) => {
-    // Don't remove a category if products are using it
-    const productsUsingCategory = products.filter(product => product.category === categoryToRemove);
-    if (productsUsingCategory.length > 0) {
-      alert(`Cannot remove category "${categoryToRemove}" because ${productsUsingCategory.length} product(s) are using it. Please reassign or delete these products first.`);
-      return false;
+  const removeProduct = async (id: string): Promise<boolean> => {
+    try {
+      console.log("Removing product:", id)
+
+      const { error } = await supabase.from("products").delete().eq("id", id)
+
+      if (error) {
+        console.error("Error removing product:", error)
+        setError(`Error removing product: ${error.message}`)
+        return false
+      }
+
+      console.log("Product removed successfully")
+      await fetchProducts()
+      return true
+    } catch (error) {
+      console.error("Error removing product:", error)
+      setError(`Unexpected error: ${error}`)
+      return false
     }
-    
-    setCategories(prev => prev.filter(category => category !== categoryToRemove));
-    return true;
+  }
+
+  const updateProduct = async (
+    id: string,
+    productData: Omit<Product, "id" | "created_at" | "updated_at">,
+  ): Promise<boolean> => {
+    try {
+      console.log("Updating product:", id, productData)
+
+      const updateData = {
+        name: productData.name,
+        description: productData.description,
+        category: productData.category,
+        material: productData.material,
+        size_range: productData.sizeRange,
+        pressure_rating: productData.pressureRating,
+        temperature_range: productData.temperatureRange,
+        image_url: productData.image || null,
+        applications: productData.applications || [],
+        additional_specs: productData.additionalSpecs || [],
+      }
+
+      console.log("Update data:", updateData)
+
+      const { data, error } = await supabase.from("products").update(updateData).eq("id", id).select()
+
+      if (error) {
+        console.error("Error updating product:", error)
+        setError(`Error updating product: ${error.message}`)
+        return false
+      }
+
+      console.log("Product updated successfully:", data)
+      await fetchProducts()
+      return true
+    } catch (error) {
+      console.error("Error updating product:", error)
+      setError(`Unexpected error: ${error}`)
+      return false
+    }
+  }
+
+  const addCategory = async (categoryName: string): Promise<boolean> => {
+    try {
+      console.log("Adding category:", categoryName)
+
+      const { data, error } = await supabase
+        .from("categories")
+        .insert([{ name: categoryName }])
+        .select()
+
+      if (error) {
+        console.error("Error adding category:", error)
+        setError(`Error adding category: ${error.message}`)
+        return false
+      }
+
+      console.log("Category added successfully:", data)
+      await fetchCategories()
+      return true
+    } catch (error) {
+      console.error("Error adding category:", error)
+      setError(`Unexpected error: ${error}`)
+      return false
+    }
+  }
+
+  const removeCategory = async (categoryName: string): Promise<boolean> => {
+    try {
+      console.log("Removing category:", categoryName)
+
+      // Check if any products are using this category
+      const productsUsingCategory = products.filter((product) => product.category === categoryName)
+      if (productsUsingCategory.length > 0) {
+        setError(
+          `Cannot remove category "${categoryName}" because ${productsUsingCategory.length} product(s) are using it.`,
+        )
+        return false
+      }
+
+      const { error } = await supabase.from("categories").delete().eq("name", categoryName)
+
+      if (error) {
+        console.error("Error removing category:", error)
+        setError(`Error removing category: ${error.message}`)
+        return false
+      }
+
+      console.log("Category removed successfully")
+      await fetchCategories()
+      return true
+    } catch (error) {
+      console.error("Error removing category:", error)
+      setError(`Unexpected error: ${error}`)
+      return false
+    }
   }
 
   return (
@@ -174,11 +271,14 @@ export function ProductProvider({ children }: { children: ReactNode }) {
       value={{
         products,
         categories,
+        loading,
+        error,
         addProduct,
         removeProduct,
         updateProduct,
         addCategory,
         removeCategory,
+        refreshData,
       }}
     >
       {children}
