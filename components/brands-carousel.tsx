@@ -57,8 +57,9 @@ export function BrandsCarousel() {
           className="text-center mb-12"
         >
           <h2 className="text-3xl lg:text-4xl font-bold mb-4">
-            Trusted by Leading
-            <span className="text-teal-600 dark:text-green-400"> Brands</span>
+            The
+            <span className="text-teal-600 dark:text-green-400"> Brands </span>
+            Brands We Deal In
           </h2>
           <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
             We partner with industry-leading manufacturers to bring you the highest quality PVC solutions
